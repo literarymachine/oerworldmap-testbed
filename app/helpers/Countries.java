@@ -23,6 +23,10 @@ public class Countries {
 
   }
 
+  public static String[] codes() {
+    return Locale.getISOCountries();
+  }
+
   public static String getNameFor(String aCountryCode, Locale aLocale) {
     Locale country = new Locale("en", aCountryCode);
     return country.getDisplayCountry(aLocale);

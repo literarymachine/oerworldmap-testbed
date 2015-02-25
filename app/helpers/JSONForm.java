@@ -2,6 +2,9 @@ package helpers;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.*;
+import com.github.fge.jsonschema.core.report.ProcessingMessage;
+import com.github.fge.jsonschema.core.report.ProcessingReport;
+import models.Resource;
 import scala.util.parsing.json.JSONObject;
 
 import java.util.*;
@@ -17,7 +20,7 @@ import java.util.regex.Pattern;
 public class JSONForm {
 
   public static JsonNode parseFormData(Map<String,String[]> formData) {
-    List<JsonNode> result = new ArrayList<>();
+    List<JsonNode> results = new ArrayList<>();
     for (Map.Entry<String,String[]> entry : formData.entrySet()) {
       JsonNode context = new ObjectNode(JsonNodeFactory.instance);
       String path = entry.getKey();
@@ -70,9 +73,17 @@ public class JSONForm {
           }
         }
       }
-      result.add(context);
+      results.add(context);
     }
-    return merge(result);
+    return merge(results);
+  }
+
+  public static List<Resource> generateErrorReport(ProcessingReport report) {
+    List<Resource> errorReport = new ArrayList<>();
+    for (ProcessingMessage message : report) {
+      errorReport.add(Resource.fromJson(message.asJson()));
+    }
+    return errorReport;
   }
 
   private static ObjectNode merge(ObjectNode x, ObjectNode y) {

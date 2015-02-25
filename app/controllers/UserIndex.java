@@ -1,5 +1,13 @@
 package controllers;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.fge.jsonschema.core.exceptions.ProcessingException;
+import com.github.fge.jsonschema.core.report.ProcessingReport;
+import com.github.fge.jsonschema.examples.Utils;
+import com.github.fge.jsonschema.main.JsonSchema;
+import com.github.fge.jsonschema.main.JsonSchemaFactory;
 import helpers.JSONForm;
 import io.michaelallen.mustache.MustacheFactory;
 import io.michaelallen.mustache.api.Mustache;
@@ -7,6 +15,7 @@ import io.michaelallen.mustache.api.Mustache;
 import java.io.IOException;
 import java.io.StringWriter;
 import java.io.Writer;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -36,116 +45,26 @@ public class UserIndex extends OERWorldMap {
     return ok(render("Registration", data, "UserIndex/index.mustache"));
   }
 
-  public static Result post() throws IOException {
+  public static Result post() throws IOException, ProcessingException {
 
     Map<String, Object> data = new HashMap<>();
-    DynamicForm requestData = Form.form().bindFromRequest();
 
-    if (requestData.hasErrors()) {
+    JsonNode personInstance = JSONForm.parseFormData(request().body().asFormUrlEncoded());
 
-      data.put("countries", Countries.list(currentLocale));
-      return badRequest(render("Registration", data, "UserIndex/index.mustache"));
+    Resource person = Resource.fromJson(personInstance);
+    ProcessingReport report = person.validate();
 
-    } else {
-
-      // Store user data
-      Resource user = new Resource("Person");
-      Map<String,String> formData = requestData.data();
-      System.out.println(JSONForm.parseFormData(request().body().asFormUrlEncoded()));
-      String email = formData.get("email");
-      String countryCode = formData.get("address[addressCountry]");
-
-      List<ValidationError> validationErrors = checkEmailAddress(email);
-      validationErrors.addAll(checkCountryCode(countryCode));
-
-      if (!validationErrors.isEmpty()) {
-        data.put("status", "warning");
-        data.put("message", errorsToHtml(validationErrors));
-        return badRequest(render("Registration", data, "feedback.mustache"));
-      } else {
-        user.put("email", email);
-
-        if (!"".equals(countryCode)) {
-          Resource address = new Resource("PostalAddress");
-          address.put("countryName", countryCode);
-          user.put("address", address);
-        }
-        mUnconfirmedUserRepository.addResource(user);
-
-        // Send confirmation mail
-        Email confirmationMail = new SimpleEmail();
-
-        try {
-          data.put("link", routes.UserIndex.post().absoluteURL(request()) + user.get("@id"));
-          Mustache template = MustacheFactory.compile("UserIndex/confirmation.mustache");
-          Writer writer = new StringWriter();
-          template.execute(writer, data);
-          confirmationMail.setMsg(writer.toString());
-          confirmationMail.setHostName(mConf.getString("mail.smtp.host"));
-          confirmationMail.setSmtpPort(mConf.getInt("mail.smtp.port"));
-          confirmationMail.setAuthenticator(
-                  new DefaultAuthenticator(mConf.getString("mail.smtp.user"), mConf.getString("mail.smtp.password"))
-          );
-          confirmationMail.setSSLOnConnect(true);
-          confirmationMail.setFrom("oerworldmap@gmail.com");
-          confirmationMail.setSubject("Please confirm");
-          confirmationMail.addTo((String)user.get("email"));
-          confirmationMail.send();
-        } catch (EmailException e) {
-          e.printStackTrace();
-        }
-
-        data.put("status", "success");
-        data.put("message", "Thank you for your interest in the OER World Map. Your email address <em>"
-                + user.get("email") + "</em> has been registered."
-        );
-        return ok(render("Registration", data, "feedback.mustache"));
-      }
+    if (!report.isSuccess()) {
+      System.out.println(report);
+      data.put("errors", JSONForm.generateErrorReport(report));
     }
+
+    data.put("person", person);
+
+    return ok(render("Registration", data, "UserIndex/index.mustache"));
+    //return ok(report.toString());
 
   }
-
-  private static List<ValidationError> checkEmailAddress(String aEmail) {
-
-    List<ValidationError> errors = new ArrayList<ValidationError>();
-    if (StringUtils.isEmpty(aEmail)){
-      errors.add(new ValidationError("email", "Please specify an email address."));
-    }
-    else if (!resourceRepository.getResourcesByContent("Person", "email", aEmail).isEmpty()) {
-      errors.add(new ValidationError("email", "This e-mail is already registered."));
-    } else if (!EmailValidator.getInstance().isValid(aEmail)) {
-      errors.add(new ValidationError("email", "This is not a valid e-mail adress."));
-    }
-    return errors;
-  }
-
-  private static List<ValidationError> checkCountryCode(String aCountryCode) {
-
-    List<ValidationError> errors = new ArrayList<ValidationError>();
-
-    List<String> validCodes = new ArrayList<>();
-
-    for (Map<String, String> country : Countries.list(currentLocale)) {
-      validCodes.add(country.get("alpha-2").toString());
-    }
-
-    if (StringUtils.isEmpty(aCountryCode)){
-      errors.add(new ValidationError("countryName", "Please specify a country code."));
-    }
-    else if (!validCodes.contains(aCountryCode.toUpperCase())) {
-      errors.add(new ValidationError("countryName", "This country is not valid."));
-    }
-    return errors;
-  }
-
-  private static String errorsToHtml(List<ValidationError> aErrorList) {
-    String html = "<ul>";
-    for (ValidationError error : aErrorList) {
-      html = html.concat("<li>".concat(error.message()).concat("</li>"));
-    }
-    return html.concat("</ul>");
-  }
-
 
   public static Result confirm(String id) throws IOException {
 
